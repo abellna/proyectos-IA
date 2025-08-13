@@ -2,6 +2,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import optuna as op
 from . import config
+from .data_processing import data_processing_pipeline, delete_nulls, delete_outliers
+from imblearn.pipeline import Pipeline
 from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 from sklearn.model_selection import cross_val_score, train_test_split
@@ -16,62 +18,65 @@ def train_test_split_data(df):
 
     return X_train, y_train, X_test, y_test
 
-def resample_data(X_train, y_train, X_test, y_test):
-    smote = SMOTE(random_state=42)
+def build_pipeline(params=None):
+    """Crea un pipeline con SMOTE y XGBoost"""
+    steps = [
+        ('data_processing', data_processing_pipeline()),
+        ('smote', SMOTE(random_state=42)),
+        ('model', XGBClassifier(**(params or {})))
+    ]
+    return Pipeline(steps)
 
-    X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
+def objective(trial, X_train, y_train):
+    params = {
+        'max_depth': trial.suggest_int('max_depth', 5, 15),
+        'learning_rate': trial.suggest_float('learning_rate', 0.1, 0.5),
+        'n_estimators': trial.suggest_int('n_estimators', 100, 300),
+        'gamma': trial.suggest_float('gamma', 0.3, 0.8)
+        }
+
+    pipeline = build_pipeline(params)
     
-    return X_train_resampled, y_train_resampled, X_test, y_test
-    
+    return cross_val_score(pipeline, X_train, y_train, cv=5, scoring='accuracy').mean()
+
 def train_model(X_train, y_train, X_test, y_test):
-    study = best_params(X_train, y_train)
-    
-    model = XGBClassifier(max_depth=study.best_params['max_depth'], learning_rate=study.best_params['learning_rate'], n_estimators=study.best_params['n_estimators'], gamma=study.best_params['gamma'])
-    model.fit(X_train, y_train)
-    
-    y_pred = model.predict(X_test)
-    
-    return model, X_train, y_train, X_test, y_test, y_pred
-
-def best_params(X_train, y_train):
-    def objective(trial):
-        max_depth = trial.suggest_int('max_depth', 5, 15)
-        learning_rate = trial.suggest_float('learning_rate', 0.1, 0.5)
-        n_estimators = trial.suggest_int('n_estimators', 100, 300)
-        gamma = trial.suggest_float('gamma', 0.3, 0.8)
-
-        model = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=n_estimators, gamma=gamma)
-        
-        return cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy').mean()
-
     study = op.create_study(direction='maximize')
-    study.optimize(objective, n_trials=20)
+    study.optimize(lambda trial: objective(trial, X_train, y_train), n_trials=20)
+    best_params = study.best_params
     
-    return study
+    pipeline = build_pipeline(best_params)
+    pipeline.fit(X_train, y_train)
+    y_pred = pipeline.predict(X_test)
     
+    return pipeline, X_train, y_train, X_test, y_test, y_pred
 
 def confusion_matrix_plot(y_test, y_pred):
-    conf_matrix = confusion_matrix(y_pred, y_test)
+    conf_matrix = confusion_matrix(y_test, y_pred)
     plt.figure(figsize=(6, 4))
     sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
     xticklabels=["No concedido préstamo", "Concedido préstamo"], yticklabels=["No concedido préstamo", "Concedido préstamo"])
     plt.title("Matriz de Confusión")
     plt.xlabel("Predicción")
     plt.ylabel("Real")
-    plt.show()
-    
+    plt.savefig('reports/confusion_matrix.png', bbox_inches='tight')
+    #plt.show()
     
 def classification_report_plot_and_scores(model, X_train, y_train, X_test, y_test, y_pred):
-    print(classification_report(y_pred, y_test.astype(int)))
+    print(classification_report(y_test.astype(int), y_pred))
     print('score_test = ', model.score(X_test, y_test.astype(int)))
     print('score_train = ', model.score(X_train, y_train.astype(int)))
     
+def pipeline_training(df):
+
+    df = delete_nulls(df)
+    df = delete_outliers(df)
+
+    X_train, y_train, X_test, y_test = train_test_split_data(df)
     
-def modeling_pipeline(df):
-    """Pipeline de modelado."""
-    data_split = train_test_split_data(df)
-    resampled_data = resample_data(*data_split)
-    model_info = train_model(*resampled_data)
-    confusion_matrix_plot(*model_info[4:6])
-    classification_report_plot_and_scores(*model_info)
-    return model_info[0]  # Return the trained model
+    model_and_data = train_model(X_train, y_train, X_test, y_test)
+    
+    confusion_matrix_plot(*model_and_data[4:6])
+    
+    classification_report_plot_and_scores(*model_and_data)
+    
+    return model_and_data[0]  # Retorna el modelo entrenado

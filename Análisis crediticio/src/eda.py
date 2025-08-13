@@ -6,9 +6,10 @@ def plot_correlation(df):
     """Muestra el mapa de calor de correlaciones."""
     plt.figure(figsize=(10,8))
     sns.heatmap(df.corr(), annot=True, cmap='coolwarm')
-    plt.show()
+    # plt.show()
+    plt.savefig('reports/correlation_heatmap.png', bbox_inches='tight')
 
-def graficar_correlacion_categorica(datos):
+def categorical_correlation(datos):
     columnas = config.SELECTED_COLUMNS
     variable_objetivo = config.TARGET_COLUMN
     
@@ -45,4 +46,5 @@ def graficar_correlacion_categorica(datos):
         extra_ax.set_title(f"Distribución de {variable_objetivo}")
     
     plt.tight_layout()
-    plt.show()
+    #plt.show()
+    plt.savefig('reports/categorical_correlation_values.png', bbox_inches='tight')

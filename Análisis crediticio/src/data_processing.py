@@ -1,13 +1,9 @@
 import pandas as pd
 from sklearn.calibration import LabelEncoder
+from sklearn.base import BaseEstimator, TransformerMixin
 from . import config
-from src.eda import plot_correlation, graficar_correlacion_categorica
 
-def load_data(filepath):
-    """Carga datos desde un CSV."""
-    return pd.read_csv(filepath)
-
-def initial_cleaning(df):
+def convert_type(df):
     """Conversión de tipos y limpieza básica."""
     df = df.astype({'age': 'int64'})
     return df
@@ -48,28 +44,29 @@ def encoder_values (df):
 
 def select_columns(df):
     """Selecciona columnas específicas del DataFrame que mejor puntuación en el mapa de calor ha tenido."""
-    columns_df = config.SELECTED_COLUMNS + [config.TARGET_COLUMN]
+    columns_df = config.SELECTED_COLUMNS
     return df[columns_df]
 
-def data_processing_pipeline(filepath, visualization=True, save_processed=True, overwrite=False):
-    """Pipeline de procesamiento de datos."""
-    
-    if config.PROCESSED_PATH.exists() and not overwrite:
-        return pd.read_csv(config.PROCESSED_PATH)
-    
-    df = load_data(filepath)
-    df = initial_cleaning(df)
-    df = delete_nulls(df)
-    df = delete_outliers(df)
-    df = fix_categorical_values(df)
-    df = encoder_values(df)
-    if visualization:
-        plot_correlation(df)
-        graficar_correlacion_categorica(df)
-    df = select_columns(df)
-    
-    if save_processed:
-        config.PROCESSED_PATH.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(config.PROCESSED_PATH, index=False)
-    
-    return df
+class data_processing_pipeline(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        pass
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        df = X.copy()
+
+        # Conversión y limpieza
+        df = convert_type(df)
+
+        # Correcciones categóricas
+        df = fix_categorical_values(df)
+
+        # Codificación
+        df = encoder_values(df)
+        
+        # Selección de columnas
+        df = select_columns(df)
+
+        return df
